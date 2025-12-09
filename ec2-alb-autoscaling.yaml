@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation template to host a sample web application on EC2 instances with an Application Load Balancer and Auto Scaling.
+
+Parameters:
+  VpcId:
+    Description: VPC ID where the resources will be deployed
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Description: Comma-separated list of Subnet IDs for the Auto Scaling Group
+    Type: List<AWS::EC2::Subnet::Id>
+  ImageId:
+    Type: String
+    Default: ami-05ffe3c48a9991133
+    Description: AMI ID for the EC2 instance
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+
+Resources:
+  WebAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and HTTPS traffic
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  WebAppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref ImageId
+        KeyName: devops-batch-16
+        SecurityGroupIds:
+          - !Ref WebAppSecurityGroup
+        UserData: 
+          Fn::Base64: 
+            !Sub |
+              #!/bin/bash
+              yum update -y
+              yum install -y httpd
+              echo "<html><body><h1>Hello from EC2 instance!</h1><p>Instance IP: $(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)</p></body></html>" > /var/www/html/index.html
+              systemctl start httpd
+              systemctl enable httpd
+
+  WebAppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 80
+      HealthCheckPath: /
+      TargetType: instance
+
+  WebAppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebAppLaunchTemplate
+        Version: !GetAtt WebAppLaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      MaxSize: '3'
+      DesiredCapacity: '2'
+      VPCZoneIdentifier: !Ref SubnetIds
+      TargetGroupARNs:
+        - !Ref WebAppTargetGroup
+
+  WebAppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: WebAppLoadBalancer
+      Subnets: !Ref SubnetIds
+      SecurityGroups:
+        - !Ref WebAppSecurityGroup
+      Scheme: internet-facing
+
+  WebAppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref WebAppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebAppTargetGroup
+
+Outputs:
+  LoadBalancerDNS:
+    Description: DNS name of the load balancer
+    Value: !GetAtt WebAppLoadBalancer.DNSName
