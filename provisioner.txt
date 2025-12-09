@@ -1,0 +1,14 @@
+provisioner remote-exec {
+    inline = [
+      # wait a bit for cloud-init and network to settle
+      "sleep 30",
+      "sudo yum update -y",
+      "sudo yum install -y httpd",
+      "sudo systemctl start httpd",
+      "sudo systemctl enable httpd",
+      # write index as root using sudo tee (redirection with sudo would fail)
+      "echo '<h1> Deployed via Terraform Remote Exec </h1>' | sudo tee /var/www/html/index.html > /dev/null"
+    ]
+    # Optional: increase the provisioner timeout if commands take long
+    # You can also add retries by wrapping commands in a loop if needed.
+  }
