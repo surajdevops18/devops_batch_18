@@ -48,7 +48,7 @@ Mappings:
     test:
       InstanceType: t2.micro
     prod:
-      InstanceType: t2.small
+      InstanceType: t3.large
 
 Resources:
   WebAppInstance:
